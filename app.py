@@ -1,18 +1,33 @@
+# =============================================================================
+# GMBLERS Analytics Dashboard - Optimized Version
+# 
+# OPTIMIZATIONS COMPLETED:
+# - Removed unused imports: datetime, matplotlib.pyplot, seaborn
+# - All functions are actively used except create_threat_card and format_time_diff
+# - CSS and styling have been kept minimal and functional
+# =============================================================================
+
 import streamlit as st
 import pandas as pd
 import pymongo
 import requests
-from datetime import datetime
-import matplotlib.pyplot as plt
-import seaborn as sns
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+# Determine page icon - use logo if available, otherwise emoji
+page_icon = "🎮"  # Default fallback
+try:
+    import os
+    if os.path.exists("logo.png"):
+        page_icon = "logo.png"
+except:
+    pass
+
 # Page configuration
 st.set_page_config(
     page_title="GMBLERS Analytics", 
-    page_icon="🎮", 
+    page_icon=page_icon, 
     layout="wide", 
     initial_sidebar_state="expanded"
 )
@@ -118,8 +133,8 @@ def check_password():
     # Load logo
     logo_base64 = ""
     try:
-        if __import__('os').path.exists("C:/Users/piron/Documents/LOLDATA/GMBLRS/try/gmb-streamlit/logo.png"):
-            logo_base64 = __import__('base64').b64encode(open("C:/Users/piron/Documents/LOLDATA/GMBLRS/try/gmb-streamlit/logo.png", "rb").read()).decode()
+        if __import__('os').path.exists("logo.png"):
+            logo_base64 = __import__('base64').b64encode(open("logo.png", "rb").read()).decode()
     except:
         pass
 
@@ -606,7 +621,6 @@ def load_games():
     db = get_db()
     return list(db.GMB_Games.find().sort("date", -1))
 
-# Load player stats from MongoDB Atlas
 @st.cache_data(ttl=300)
 def load_players():
     db = get_db()
@@ -633,13 +647,13 @@ with st.sidebar:
     </div>
     """.format(
         # Try to load logo and convert to base64, or use empty string if it fails
-        __import__('base64').b64encode(open("C:/Users/piron/Documents/LOLDATA/GMBLRS/try/gmb-streamlit/logo.png", "rb").read()).decode() if __import__('os').path.exists("C:/Users/piron/Documents/LOLDATA/GMBLRS/try/gmb-streamlit/logo.png") else ""
+        __import__('base64').b64encode(open("logo.png", "rb").read()).decode() if __import__('os').path.exists("logo.png") else ""
     ), unsafe_allow_html=True)
     
     # Modern navigation
     page = st.radio(
         "Navigation",
-        ["Scrims", "Team Stats", "Player Stats"]
+        ["Scrims", "Team Stats", "Player Stats", "Champion Analysis"]
     )
     
     # Add some stats in sidebar
@@ -668,6 +682,196 @@ games = load_games()
 players_db = load_players()
 champion_data, ddragon_version, champ_mapping = get_champion_data()
 
+# Helper functions for the enhanced Champion Analysis page
+def create_champion_card(champ_data, role_color, champion_data, champ_mapping, ddragon_version):
+    """Create a simple champion card with clear separation using only native Streamlit components"""
+    champion_name = champ_data["champion"]
+    win_rate = champ_data["win_rate"]
+    games = champ_data["games"]
+    wins = champ_data["wins"]
+    losses = champ_data["losses"]
+    
+    # Get champion key for image
+    champ_key = find_champion_key(champion_name, champion_data, champ_mapping)
+    
+    # Determine win rate status
+    if win_rate >= 70:
+        wr_status = "Excellent"
+    elif win_rate >= 50:
+        wr_status = "Good"
+    else:
+        wr_status = "Needs Work"
+    
+    # Champion icon centered
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        if champ_key:
+            st.image(
+                f"https://ddragon.leagueoflegends.com/cdn/{ddragon_version}/img/champion/{champ_key}.png",
+                width=100
+            )
+        else:
+            st.write("❓")
+    
+    # Champion name centered
+    st.markdown(f"### {champion_name}")
+    
+    # Win rate as main metric
+    st.metric(label="Win Rate", value=f"{win_rate:.1f}%", delta=wr_status)
+    
+    # Stats in columns
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Wins", wins)
+    with col2:
+        st.metric("Games", games)
+    with col3:
+        st.metric("Losses", losses)
+    
+    # Extra spacing
+    st.write("")
+
+def create_champion_row(champ_data, role_color, champion_data, champ_mapping, ddragon_version):
+    """Create a compact champion row for detailed view"""
+    champion_name = champ_data["champion"]
+    win_rate = champ_data["win_rate"]
+    games = champ_data["games"]
+    wins = champ_data["wins"]
+    losses = champ_data["losses"]
+    
+    champ_key = find_champion_key(champion_name, champion_data, champ_mapping)
+    wr_color = "#10b981" if win_rate >= 60 else "#f59e0b" if win_rate >= 40 else "#ef4444"
+    
+    col1, col2, col3, col4 = st.columns([1, 3, 2, 2])
+    
+    with col1:
+        if champ_key:
+            st.image(f"https://ddragon.leagueoflegends.com/cdn/{ddragon_version}/img/champion/{champ_key}.png", width=50)
+        else:
+            st.markdown(f"""
+            <div style="width: 50px; height: 50px; background: #334155; border-radius: 8px; 
+                        display: flex; align-items: center; justify-content: center; border: 2px solid {role_color};">
+                <span style="color: white;">?</span>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"**{champion_name}**")
+    
+    with col3:
+        st.metric("Win Rate", f"{win_rate:.1f}%")
+    
+    with col4:
+        st.markdown(f"**{wins}W - {losses}L** ({games}g)")
+
+def create_threat_card(champ_data, threat_color, champion_data, champ_mapping, ddragon_version):
+    """Create a simple threat card with icon and info in dark area"""
+    champion_name = champ_data["champion"]
+    win_rate = champ_data["win_rate"]
+    games = champ_data["games"]
+    wins = champ_data["wins"]
+    losses = champ_data["losses"]
+    
+    champ_key = find_champion_key(champion_name, champion_data, champ_mapping)
+    
+    # Determine threat level
+    if win_rate >= 70:
+        threat_level = "HIGH THREAT"
+        threat_icon = "🔥"
+    elif win_rate >= 50:
+        threat_level = "MEDIUM THREAT"
+        threat_icon = "⚠️"
+    else:
+        threat_level = "FAVORABLE"
+        threat_icon = "✅"
+    
+    # Champion image at the top
+    if champ_key:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.image(
+                f"https://ddragon.leagueoflegends.com/cdn/{ddragon_version}/img/champion/{champ_key}.png",
+                width=60
+            )
+    else:
+        st.markdown(f"""
+        <div style="display: flex; justify-content: center; margin-bottom: 0.75rem;">
+            <div style="width: 60px; height: 60px; border-radius: 50%; border: 2px solid {threat_color}; 
+                        background: #374151; display: flex; align-items: center; justify-content: center;">
+                <span style="color: white;">?</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # All info in the dark background area
+    st.markdown(f"""
+    <div style="background: rgba(0, 0, 0, 0.6); border-radius: 8px; padding: 1.25rem; margin: 0.75rem 0; text-align: center;">
+        <!-- Champion name -->
+        <h4 style="color: {threat_color}; margin: 0 0 0.5rem 0; font-weight: 700;">
+            {champion_name}
+        </h4>
+        
+        <!-- Threat level -->
+        <div style="color: {threat_color}; font-size: 0.7rem; text-transform: uppercase; 
+                    margin-bottom: 0.75rem; font-weight: 600;">
+            {threat_icon} {threat_level}
+        </div>
+        
+        <!-- Win rate -->
+        <div style="font-size: 1.5rem; font-weight: 700; color: {threat_color}; margin-bottom: 0.25rem;">
+            {win_rate:.1f}%
+        </div>
+        <div style="font-size: 0.7rem; color: #94a3b8; font-weight: 500;">
+            {wins}W-{losses}L ({games}g)
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def create_detailed_opponent_table(opponent_data, champion_data, champ_mapping, ddragon_version):
+    """Create a detailed table view of all opponent champions"""
+    # Display as rows like the GMB "View All Champions" section
+    for champ_data in opponent_data:
+        create_champion_row(champ_data, "#64748b", champion_data, champ_mapping, ddragon_version)
+
+def create_threat_layout_with_separators(threat_data, threat_color, champion_data, champ_mapping, ddragon_version, max_display=4):
+    """Create threat champion layout with vertical separators"""
+    num_to_show = min(max_display, len(threat_data))
+    
+    if num_to_show == 1:
+        cols = st.columns([1, 2, 1])
+        with cols[1]:
+            create_champion_card(threat_data[0], threat_color, champion_data, champ_mapping, ddragon_version)
+    elif num_to_show == 2:
+        cols = st.columns([2, 1, 2])
+        with cols[0]:
+            create_champion_card(threat_data[0], threat_color, champion_data, champ_mapping, ddragon_version)
+        with cols[1]:
+            st.markdown("", unsafe_allow_html=True)  # Separator space
+        with cols[2]:
+            create_champion_card(threat_data[1], threat_color, champion_data, champ_mapping, ddragon_version)
+    elif num_to_show == 3:
+        cols = st.columns([3, 1, 3, 1, 3])
+        with cols[0]:
+            create_champion_card(threat_data[0], threat_color, champion_data, champ_mapping, ddragon_version)
+        with cols[1]:
+            st.markdown('<div style="border-left: 2px solid #475569; height: 400px; margin: 2rem 0;"></div>', unsafe_allow_html=True)
+        with cols[2]:
+            create_champion_card(threat_data[1], threat_color, champion_data, champ_mapping, ddragon_version)
+        with cols[3]:
+            st.markdown('<div style="border-left: 2px solid #475569; height: 400px; margin: 2rem 0;"></div>', unsafe_allow_html=True)
+        with cols[4]:
+            create_champion_card(threat_data[2], threat_color, champion_data, champ_mapping, ddragon_version)
+    elif num_to_show == 4:
+        cols = st.columns([2, 1, 2, 1, 2, 1, 2])
+        for i in range(4):
+            col_index = i * 2  # 0, 2, 4, 6
+            with cols[col_index]:
+                create_champion_card(threat_data[i], threat_color, champion_data, champ_mapping, ddragon_version)
+            # Add separator after first three champions
+            if i < 3:
+                with cols[col_index + 1]:
+                    st.markdown('<div style="border-left: 2px solid #475569; height: 400px; margin: 2rem 0;"></div>', unsafe_allow_html=True)
+
 # Page routing based on selection
 if page == "Scrims":
     st.title("Scrims Overview")
@@ -689,10 +893,35 @@ if page == "Scrims":
         
         # Enhanced filtering section
         with st.container():
-            st.markdown('<div class="modern-card">', unsafe_allow_html=True)
+
             st.subheader("Find a Scrim")
             
-            col1, col2, col3 = st.columns([1, 1, 2])
+            # Extract all champions for filtering
+            all_gmb_champions = set()
+            all_enemy_champions = set()
+            gmb_player_names = ["ILYXOU", "Goliah", "iwanan", "Marth", "Mahonix"]
+            
+            for game in games:
+                gmb_team_id = game.get("gmb_team_id")
+                if "final_items" in game:
+                    for player, item_data in game["final_items"].items():
+                        champion = item_data.get("champion", "")
+                        team_id = item_data.get("team_id")
+                        
+                        if champion:  # Only add if champion name exists
+                            # Check if this is a GMB player
+                            is_gmb_player = any(player.upper() == gmb_name.upper() for gmb_name in gmb_player_names)
+                            
+                            if is_gmb_player and team_id == gmb_team_id:
+                                all_gmb_champions.add(champion)
+                            elif team_id != gmb_team_id:
+                                all_enemy_champions.add(champion)
+            
+            # Sort champion lists
+            gmb_champions_list = ["All"] + sorted(list(all_gmb_champions))
+            enemy_champions_list = ["All"] + sorted(list(all_enemy_champions))
+            
+            col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
             
             with col1:
                 # Date filtering
@@ -714,6 +943,14 @@ if page == "Scrims":
                 opponent_filter = st.selectbox("Opponent", opponents)
             
             with col3:
+                # Champion filters
+                st.markdown("**Champion Filters**")
+                allied_champion_filter = st.selectbox("Allied Champion", gmb_champions_list, 
+                                                     help="Filter games where GMB played this champion")
+                enemy_champion_filter = st.selectbox("Enemy Champion", enemy_champions_list,
+                                                    help="Filter games where opponent played this champion")
+            
+            with col4:
                 # Apply filters
                 filtered_games = games_df.copy()
                 
@@ -726,13 +963,53 @@ if page == "Scrims":
                     except:
                         pass
                 
-                # Other filters
+                # Basic filters
                 if result_filter != "All":
                     filtered_games = filtered_games[filtered_games["result"] == result_filter]
                 if side_filter != "All":
                     filtered_games = filtered_games[filtered_games["side"] == side_filter]
                 if opponent_filter != "All":
                     filtered_games = filtered_games[filtered_games["opponent"] == opponent_filter]
+                
+                # Champion filters - need to check actual game data
+                if allied_champion_filter != "All" or enemy_champion_filter != "All":
+                    valid_game_ids = []
+                    
+                    for game in games:
+                        game_id = str(game.get("_id"))
+                        gmb_team_id = game.get("gmb_team_id")
+                        
+                        # Check if this game matches current filters (before champion filter)
+                        if game_id not in filtered_games["id"].values:
+                            continue
+                        
+                        gmb_champions_in_game = set()
+                        enemy_champions_in_game = set()
+                        
+                        if "final_items" in game:
+                            for player, item_data in game["final_items"].items():
+                                champion = item_data.get("champion", "")
+                                team_id = item_data.get("team_id")
+                                
+                                if champion:
+                                    is_gmb_player = any(player.upper() == gmb_name.upper() for gmb_name in gmb_player_names)
+                                    
+                                    if is_gmb_player and team_id == gmb_team_id:
+                                        gmb_champions_in_game.add(champion)
+                                    elif team_id != gmb_team_id:
+                                        enemy_champions_in_game.add(champion)
+                        
+                        # Check champion filters
+                        allied_match = (allied_champion_filter == "All" or 
+                                      allied_champion_filter in gmb_champions_in_game)
+                        enemy_match = (enemy_champion_filter == "All" or 
+                                     enemy_champion_filter in enemy_champions_in_game)
+                        
+                        if allied_match and enemy_match:
+                            valid_game_ids.append(game_id)
+                    
+                    # Filter dataframe to only include games that match champion criteria
+                    filtered_games = filtered_games[filtered_games["id"].isin(valid_game_ids)]
                 
                 # Game selection
                 if not filtered_games.empty:
@@ -745,21 +1022,27 @@ if page == "Scrims":
                     
                     selected_id = filtered_games.iloc[selected_index]["id"]
                     
-                    # Display selection summary
+                    # Display selection summary with champion info
                     selected_row = filtered_games.iloc[selected_index]
                     result_color = "#10b981" if selected_row['result'] == "WIN" else "#ef4444"
+                    
+                    # Add champion info to summary if filters are active
+                    champion_info = ""
+                    if allied_champion_filter != "All":
+                        champion_info += f" • Allied: {allied_champion_filter}"
+                    if enemy_champion_filter != "All":
+                        champion_info += f" • Enemy: {enemy_champion_filter}"
+                    
                     st.markdown(f"""
                     <div style="background: rgba(51, 65, 85, 0.3); padding: 1rem; border-radius: 8px; margin-top: 1rem; border-left: 4px solid {result_color};">
                         <strong>Selected:</strong> {selected_row['date']} vs {selected_row['opponent']} • 
                         <span style="color: {result_color}; font-weight: 600;">{selected_row['result']}</span> • 
-                        {selected_row['side']} side • Duration: {selected_row['duration']}
+                        {selected_row['side']} side • Duration: {selected_row['duration']}{champion_info}
                     </div>
                     """, unsafe_allow_html=True)
                 else:
                     st.warning("No scrims match the selected filters.")
                     selected_id = None
-            
-            st.markdown('</div>', unsafe_allow_html=True)
         
         # Game details section
         if selected_id:
@@ -819,7 +1102,7 @@ if page == "Scrims":
                     if pick_order:
                         pick_order.sort(key=lambda x: x.get("sequence_number", 99) if x.get("sequence_number") is not None else 99)
                         
-                        st.markdown('<div class="modern-card">', unsafe_allow_html=True)
+
                         st.subheader("Pick Order")
                         
                         # Create draft visualization
@@ -1130,8 +1413,6 @@ elif page == "Team Stats":
         col1, col2 = st.columns([3, 2])
         
         with col1:
-            st.markdown('<div class="modern-card">', unsafe_allow_html=True)
-            
             # Create Plotly chart
             fig = go.Figure(data=[
                 go.Bar(
@@ -1223,7 +1504,7 @@ elif page == "Player Stats":
         players_df = pd.DataFrame(players_data)
         
         # Enhanced player selector
-        st.markdown('<div class="modern-card">', unsafe_allow_html=True)
+        # st.markdown('<div class="modern-card">', unsafe_allow_html=True)
         players = sorted(list(players_df["name"]))
         selected_player = st.selectbox("Select Player", players)
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1295,7 +1576,7 @@ elif page == "Player Stats":
                 
                 with col3:
                     styled_metric("Turret Plates Taken", f"{player_challenges.get('turret_plates_taken', 0):.1f}")
-                    styled_metric("KDA Ratio", f"{player_challenges.get('kda', 0):.2f}")
+                    # styled_metric("KDA Ratio", f"{player_challenges.get('kda', 0):.2f}")
                     danced = "Yes" if player_challenges.get('dance_with_rift_herald', False) else "No"
                     styled_metric("Danced with Herald", danced)
             else:
@@ -1343,6 +1624,271 @@ elif page == "Player Stats":
                     use_container_width=True
                 )
                 st.markdown('</div>', unsafe_allow_html=True)
+
+elif page == "Champion Analysis":
+    st.title("Champion Analysis")
+    
+    if not games:
+        st.warning("No games found in database. Please import game data first.")
+    else:
+        # Define player roles
+        gmb_players = {
+            "ILYXOU": "Top",
+            "Goliah": "Jungle", 
+            "iwanan": "Mid",
+            "Marth": "ADC",
+            "Mahonix": "Support"
+        }
+        
+        # Role colors for better visual distinction
+        role_colors = {
+            "Top": "#e11d48",      # Red
+            "Jungle": "#10b981",   # Green  
+            "Mid": "#3b82f6",      # Blue
+            "ADC": "#f59e0b",      # Orange
+            "Support": "#8b5cf6"   # Purple
+        }
+        
+        # Collect champion data for GMB players
+        gmb_champion_data = {}
+        opponent_champion_data = {}
+        
+        for game in games:
+            game_win = game.get("win", False)
+            gmb_team_id = game.get("gmb_team_id")
+            
+            if "final_items" in game:
+                for player, item_data in game["final_items"].items():
+                    champion = item_data.get("champion", "Unknown")
+                    team_id = item_data.get("team_id")
+                    
+                    # Check if this is a GMB player
+                    gmb_player = None
+                    for gmb_name, role in gmb_players.items():
+                        if player.upper() == gmb_name.upper() or player == gmb_name:
+                            gmb_player = gmb_name
+                            break
+                    
+                    if gmb_player and team_id == gmb_team_id:
+                        # GMB player
+                        role = gmb_players[gmb_player]
+                        if role not in gmb_champion_data:
+                            gmb_champion_data[role] = {}
+                        if champion not in gmb_champion_data[role]:
+                            gmb_champion_data[role][champion] = {"wins": 0, "games": 0}
+                        
+                        gmb_champion_data[role][champion]["games"] += 1
+                        if game_win:
+                            gmb_champion_data[role][champion]["wins"] += 1
+                    
+                    elif team_id != gmb_team_id:
+                        # Opponent player
+                        if "Opponent" not in opponent_champion_data:
+                            opponent_champion_data["Opponent"] = {}
+                        if champion not in opponent_champion_data["Opponent"]:
+                            opponent_champion_data["Opponent"][champion] = {"wins": 0, "games": 0}
+                        
+                        opponent_champion_data["Opponent"][champion]["games"] += 1
+                        if not game_win:  # Opponent wins when GMB loses
+                            opponent_champion_data["Opponent"][champion]["wins"] += 1
+        
+        # Create tabs for different views
+        tab1, tab2 = st.tabs(["🏆 GMB Champions", "⚔️ Opponent Analysis"])
+        
+        with tab1:
+            st.markdown("""
+            <div style="text-align: center; margin-bottom: 2rem;">
+                <h2 style="background: linear-gradient(135deg, #3b82f6, #60a5fa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.5rem;">
+                    GMBLERS Champion Performance by Role
+                </h2>
+                <p style="color: #94a3b8; font-size: 1.1rem;">Analyzing champion win rates for each team member</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Create role sections
+            for role in ["Top", "Jungle", "Mid", "ADC", "Support"]:
+                player_name = [k for k, v in gmb_players.items() if v == role][0]
+                role_color = role_colors.get(role, "#3b82f6")
+                
+                if role in gmb_champion_data and gmb_champion_data[role]:
+                    # Prepare data for this role
+                    role_data = []
+                    for champion, stats in gmb_champion_data[role].items():
+                        if stats["games"] > 0:
+                            win_rate = (stats["wins"] / stats["games"]) * 100
+                            role_data.append({
+                                "champion": champion,
+                                "games": stats["games"],
+                                "wins": stats["wins"],
+                                "losses": stats["games"] - stats["wins"],
+                                "win_rate": win_rate
+                            })
+                    
+                    # Sort by games played, then by win rate
+                    role_data.sort(key=lambda x: (x["games"], x["win_rate"]), reverse=True)
+                    
+                    # Role header with modern styling
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, {role_color}20, {role_color}10); 
+                                border-left: 4px solid {role_color}; 
+                                border-radius: 12px; 
+                                padding: 1.5rem; 
+                                margin: 2rem 0 1rem 0;
+                                backdrop-filter: blur(10px);">
+                        <h3 style="color: {role_color}; margin: 0; display: flex; align-items: center; gap: 1rem;">
+                            <span style="font-size: 1.8rem;">{role}</span>
+                            <span style="color: #94a3b8; font-size: 1.2rem; font-weight: 400;">• {player_name}</span>
+                        </h3>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Create champion cards layout
+                    if len(role_data) <= 3:
+                        # Few champions - display in columns with vertical separators
+                        if len(role_data) == 1:
+                            cols = st.columns([1, 2, 1])
+                            with cols[1]:
+                                create_champion_card(role_data[0], role_color, champion_data, champ_mapping, ddragon_version)
+                        elif len(role_data) == 2:
+                            cols = st.columns([2, 1, 2])
+                            with cols[0]:
+                                create_champion_card(role_data[0], role_color, champion_data, champ_mapping, ddragon_version)
+                            with cols[1]:
+                                st.markdown("", unsafe_allow_html=True)  # Separator space
+                            with cols[2]:
+                                create_champion_card(role_data[1], role_color, champion_data, champ_mapping, ddragon_version)
+                        elif len(role_data) == 3:
+                            cols = st.columns([3, 1, 3, 1, 3])
+                            with cols[0]:
+                                create_champion_card(role_data[0], role_color, champion_data, champ_mapping, ddragon_version)
+                            with cols[1]:
+                                st.markdown('<div style="border-left: 2px solid #475569; height: 400px; margin: 2rem 0;"></div>', unsafe_allow_html=True)
+                            with cols[2]:
+                                create_champion_card(role_data[1], role_color, champion_data, champ_mapping, ddragon_version)
+                            with cols[3]:
+                                st.markdown('<div style="border-left: 2px solid #475569; height: 400px; margin: 2rem 0;"></div>', unsafe_allow_html=True)
+                            with cols[4]:
+                                create_champion_card(role_data[2], role_color, champion_data, champ_mapping, ddragon_version)
+                    else:
+                        # Many champions - display in grid with metrics + detailed table
+                        # Top 3 champions as cards with separators
+                        cols = st.columns([3, 1, 3, 1, 3])
+                        for i in range(min(3, len(role_data))):
+                            col_index = i * 2  # 0, 2, 4
+                            with cols[col_index]:
+                                create_champion_card(role_data[i], role_color, champion_data, champ_mapping, ddragon_version)
+                            # Add separator after first two champions
+                            if i < 2:
+                                with cols[col_index + 1]:
+                                    st.markdown('<div style="border-left: 2px solid #475569; height: 400px; margin: 2rem 0;"></div>', unsafe_allow_html=True)
+                        
+                        # Remaining champions in detailed view
+                        if len(role_data) > 3:
+                            with st.expander(f"View All {role} Champions ({len(role_data)} total)", expanded=False):
+                                # Create detailed champion grid
+                                remaining_champs = role_data[3:]
+                                for champ_data in remaining_champs:
+                                    create_champion_row(champ_data, role_color, champion_data, champ_mapping, ddragon_version)
+                else:
+                    # No data for this role
+                    st.markdown(f"""
+                    <div style="background: rgba(51, 65, 85, 0.3); 
+                                border-left: 4px solid {role_color}; 
+                                border-radius: 12px; 
+                                padding: 1.5rem; 
+                                margin: 2rem 0 1rem 0;
+                                text-align: center;">
+                        <h3 style="color: {role_color}; margin: 0 0 0.5rem 0;">{role} • {player_name}</h3>
+                        <p style="color: #94a3b8; margin: 0;">No champion data available</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        with tab2:
+            st.markdown("""
+            <div style="text-align: center; margin-bottom: 2rem;">
+                <h2 style="background: linear-gradient(135deg, #ef4444, #f87171); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.5rem;">
+                    Enemy Champion Analysis
+                </h2>
+                <p style="color: #94a3b8; font-size: 1.1rem;">Champions that opponents use against GMBLERS</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if "Opponent" in opponent_champion_data:
+                # Prepare opponent data
+                opponent_data = []
+                for champion, stats in opponent_champion_data["Opponent"].items():
+                    if stats["games"] > 0:
+                        win_rate = (stats["wins"] / stats["games"]) * 100
+                        opponent_data.append({
+                            "champion": champion,
+                            "games": stats["games"],
+                            "wins": stats["wins"],
+                            "losses": stats["games"] - stats["wins"],
+                            "win_rate": win_rate
+                        })
+                
+                if opponent_data:
+                    # Sort by games played, then by win rate
+                    opponent_data.sort(key=lambda x: (x["games"], x["win_rate"]), reverse=True)
+                    
+                    # Summary stats cards
+                    total_unique_champs = len(opponent_data)
+                    high_winrate_champs = len([d for d in opponent_data if d["win_rate"] > 60])
+                    most_played = opponent_data[0] if opponent_data else None
+                    
+                    # Top stats
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        styled_metric("Unique Champions Faced", str(total_unique_champs))
+                    with col2:
+                        styled_metric("High Win Rate vs GMB", f"{high_winrate_champs} champions", "> 60% win rate", "bad")
+                    with col3:
+                        if most_played:
+                            styled_metric("Most Played Against Us", most_played["champion"], f"{most_played['games']} games", "blue")
+                    
+                    # Threat Level Analysis
+                    st.subheader("🚨 Threat Level Analysis")
+                    
+                    # Categorize threats
+                    high_threat = [d for d in opponent_data if d["win_rate"] >= 70 and d["games"] >= 2]
+                    medium_threat = [d for d in opponent_data if 50 <= d["win_rate"] < 70 and d["games"] >= 2]
+                    low_threat = [d for d in opponent_data if d["win_rate"] < 50 and d["games"] >= 2]
+                    
+                    # High threat champions
+                    if high_threat:
+                        st.markdown("""
+                        <h4 style="color: #ef4444; margin: 1.5rem 0 1rem 0;">
+                            🔥 High Threat Champions (≥70% win rate, min 2 games)
+                        </h4>
+                        """, unsafe_allow_html=True)
+                        
+                        create_threat_layout_with_separators(high_threat, "#ef4444", champion_data, champ_mapping, ddragon_version)
+                    
+                    # Medium threat champions  
+                    if medium_threat:
+                        st.markdown("""
+                        <h4 style="color: #f59e0b; margin: 1.5rem 0 1rem 0;">
+                            ⚠️ Medium Threat Champions (50-69% win rate, min 2 games)
+                        </h4>
+                        """, unsafe_allow_html=True)
+                        
+                        create_threat_layout_with_separators(medium_threat, "#f59e0b", champion_data, champ_mapping, ddragon_version)
+                    
+                    # Low threat champions
+                    if low_threat:
+                        st.markdown("""
+                        <h4 style="color: #10b981; margin: 1.5rem 0 1rem 0;">
+                            ✅ Favorable Matchups (<50% win rate vs us, min 2 games)
+                        </h4>
+                        """, unsafe_allow_html=True)
+                        
+                        create_threat_layout_with_separators(low_threat, "#10b981", champion_data, champ_mapping, ddragon_version)
+                    
+                    # Detailed table for all opponents
+                    with st.expander("📊 Complete Opponent Champion Statistics", expanded=False):
+                        create_detailed_opponent_table(opponent_data, champion_data, champ_mapping, ddragon_version)
+            else:
+                st.info("No opponent champion data available")
 
 # Logout button at the end of the application
 st.markdown("---")
